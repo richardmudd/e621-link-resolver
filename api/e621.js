@@ -26,7 +26,7 @@ module.exports = async function handler(req, res) {
   setCors(res);
 
 
-  // Handle browser preflight requests
+  // Handle browser preflight
   if (req.method === "OPTIONS") {
     return res.status(200).json({
       ok: true
@@ -35,7 +35,7 @@ module.exports = async function handler(req, res) {
 
 
   // =====================================
-  // Basic e621 connection test
+  // GET TEST
   //
   // /api/e621?test=1
   // =====================================
@@ -60,24 +60,38 @@ module.exports = async function handler(req, res) {
       );
 
 
-      const text = await response.text();
+      const text =
+        await response.text();
 
 
       return res.status(200).json({
-        ok: response.ok,
-        status: response.status,
+
+        ok:
+          response.ok,
+
+        status:
+          response.status,
+
         contentType:
-          response.headers.get("content-type"),
+          response.headers.get(
+            "content-type"
+          ),
+
         body:
           text.slice(0, 3000)
+
       });
 
 
     } catch (error) {
 
       return res.status(500).json({
-        ok: false,
-        error: error.message
+
+        ok:false,
+
+        error:
+          error.message
+
       });
 
     }
@@ -86,9 +100,9 @@ module.exports = async function handler(req, res) {
 
 
   // =====================================
-  // Browser lookup test
+  // GET ID TEST
   //
-  // /api/e621?id=6610187
+  // /api/e621?id=6610214
   // =====================================
 
   if (
@@ -99,69 +113,149 @@ module.exports = async function handler(req, res) {
     try {
 
       const result =
-        await getE621Post(req.query.id);
+        await getE621Post(
+          req.query.id
+        );
 
 
       return res.status(200).json({
-        ok: true,
+
+        ok:true,
+
         result
+
       });
 
 
-    } catch (error) {
+    } catch(error) {
 
       return res.status(500).json({
-        ok: false,
-        error: error.message
+
+        ok:false,
+
+        error:
+          error.message
+
       });
 
     }
-
   }
 
 
 
   // =====================================
-  // Normal HTML POST lookup
-  //
-  // Body:
-  // {
-  //   "url":"https://e621.net/posts/123"
-  // }
+  // POST LOOKUP
   // =====================================
 
   if (req.method !== "POST") {
 
     return res.status(405).json({
-      ok: false,
-      error: "POST required."
+
+      ok:false,
+
+      error:
+        "POST required."
+
     });
 
   }
 
 
+
   try {
+
+    // Manually parse body if Vercel
+    // did not parse it automatically
+
+    let body =
+      req.body;
+
+
+    if (!body) {
+
+      let raw = "";
+
+
+      await new Promise((resolve) => {
+
+        req.on(
+          "data",
+          chunk => {
+            raw += chunk;
+          }
+        );
+
+
+        req.on(
+          "end",
+          resolve
+        );
+
+      });
+
+
+      try {
+
+        body =
+          JSON.parse(raw);
+
+      } catch {
+
+        body = {};
+
+      }
+
+    }
+
+
 
     const {
       url
-    } = req.body || {};
+    } = body || {};
 
 
-    if (
-      typeof url !== "string" ||
-      !url.trim()
-    ) {
+
+    if (!url) {
 
       return res.status(400).json({
-        ok: false,
-        error: "URL is required."
+
+        ok:false,
+
+        error:
+          "No URL received.",
+
+        bodyReceived:
+          body
+
       });
 
     }
 
 
+
     const parsed =
-      new URL(url.trim());
+      new URL(
+        url
+      );
+
+
+    if (
+      !parsed.hostname.endsWith(
+        "e621.net"
+      )
+    ) {
+
+      return res.status(400).json({
+
+        ok:false,
+
+        error:
+          "Not an e621 URL."
+
+      });
+
+    }
+
 
 
     const match =
@@ -170,39 +264,54 @@ module.exports = async function handler(req, res) {
       );
 
 
+
     if (!match) {
 
       return res.status(400).json({
-        ok: false,
-        error: "Could not find e621 post ID."
+
+        ok:false,
+
+        error:
+          "Could not find e621 post ID."
+
       });
 
     }
 
 
+
     const result =
-      await getE621Post(match[1]);
+      await getE621Post(
+        match[1]
+      );
 
 
     const post =
       result.posts?.[0];
 
 
+
     if (!post) {
 
       return res.status(404).json({
-        ok: false,
-        error: "No e621 post found."
+
+        ok:false,
+
+        error:
+          "No post found."
+
       });
 
     }
 
 
+
     return res.status(200).json({
 
-      ok: true,
+      ok:true,
 
-      site: "e621",
+      site:
+        "e621",
 
       id:
         post.id,
@@ -212,6 +321,10 @@ module.exports = async function handler(req, res) {
 
       preview:
         post.preview?.url ||
+        post.sample?.url ||
+        null,
+
+      sample:
         post.sample?.url ||
         null,
 
@@ -225,7 +338,7 @@ module.exports = async function handler(req, res) {
         flattenTags(post.tags),
 
       description:
-        post.description || null,
+        post.description || "",
 
       raw:
         post
@@ -233,11 +346,16 @@ module.exports = async function handler(req, res) {
     });
 
 
-  } catch (error) {
+
+  } catch(error) {
 
     return res.status(500).json({
-      ok: false,
-      error: error.message
+
+      ok:false,
+
+      error:
+        error.message
+
     });
 
   }
@@ -252,6 +370,7 @@ module.exports = async function handler(req, res) {
 
 async function getE621Post(id) {
 
+
   if (
     !process.env.E621_USERNAME ||
     !process.env.E621_API_KEY
@@ -264,10 +383,12 @@ async function getE621Post(id) {
   }
 
 
+
   const apiUrl =
     new URL(
       "https://e621.net/posts.json"
     );
+
 
 
   apiUrl.searchParams.set(
@@ -294,10 +415,12 @@ async function getE621Post(id) {
   );
 
 
+
   const response =
     await fetch(
       apiUrl.toString(),
       {
+
         headers: {
 
           "User-Agent":
@@ -307,12 +430,15 @@ async function getE621Post(id) {
             "application/json"
 
         }
+
       }
     );
 
 
+
   const text =
     await response.text();
+
 
 
   if (!response.ok) {
@@ -324,6 +450,7 @@ async function getE621Post(id) {
   }
 
 
+
   return JSON.parse(text);
 
 }
@@ -331,18 +458,22 @@ async function getE621Post(id) {
 
 
 // =====================================
-// Flatten e621 tags
+// Flatten tag object
 // =====================================
 
 function flattenTags(tags) {
 
   if (!tags) {
+
     return [];
+
   }
 
 
   if (Array.isArray(tags)) {
+
     return tags;
+
   }
 
 
