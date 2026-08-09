@@ -1,19 +1,13 @@
 function setCors(res) {
-  res.setHeader(
-    "Access-Control-Allow-Origin",
-    "*"
-  );
-
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, OPTIONS"
   );
-
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, Accept"
   );
-
   res.setHeader(
     "Access-Control-Max-Age",
     "86400"
@@ -26,7 +20,7 @@ module.exports = async function handler(req, res) {
   setCors(res);
 
 
-  // Handle browser preflight
+  // Preflight
   if (req.method === "OPTIONS") {
     return res.status(200).json({
       ok: true
@@ -34,11 +28,10 @@ module.exports = async function handler(req, res) {
   }
 
 
-  // =====================================
+  // ===============================
   // GET TEST
-  //
   // /api/e621?test=1
-  // =====================================
+  // ===============================
 
   if (
     req.method === "GET" &&
@@ -47,51 +40,21 @@ module.exports = async function handler(req, res) {
 
     try {
 
-      const response = await fetch(
-        "https://e621.net/posts.json?limit=1",
-        {
-          headers: {
-            "User-Agent":
-              `MultiSiteLinkResolver/1.0 (by ${process.env.E621_USERNAME || "unknown"})`,
-            "Accept":
-              "application/json"
-          }
-        }
+      const data = await e621Fetch(
+        "https://e621.net/posts.json?limit=1"
       );
 
-
-      const text =
-        await response.text();
-
-
       return res.status(200).json({
-
-        ok:
-          response.ok,
-
-        status:
-          response.status,
-
-        contentType:
-          response.headers.get(
-            "content-type"
-          ),
-
-        body:
-          text.slice(0, 3000)
-
+        ok: true,
+        status: 200,
+        body: data
       });
-
 
     } catch (error) {
 
       return res.status(500).json({
-
-        ok:false,
-
-        error:
-          error.message
-
+        ok: false,
+        error: error.message
       });
 
     }
@@ -99,11 +62,10 @@ module.exports = async function handler(req, res) {
 
 
 
-  // =====================================
+  // ===============================
   // GET ID TEST
-  //
-  // /api/e621?id=6610214
-  // =====================================
+  // /api/e621?id=123
+  // ===============================
 
   if (
     req.method === "GET" &&
@@ -119,23 +81,16 @@ module.exports = async function handler(req, res) {
 
 
       return res.status(200).json({
-
-        ok:true,
-
+        ok: true,
         result
-
       });
 
 
-    } catch(error) {
+    } catch (error) {
 
       return res.status(500).json({
-
-        ok:false,
-
-        error:
-          error.message
-
+        ok: false,
+        error: error.message
       });
 
     }
@@ -143,19 +98,15 @@ module.exports = async function handler(req, res) {
 
 
 
-  // =====================================
+  // ===============================
   // POST LOOKUP
-  // =====================================
+  // ===============================
 
   if (req.method !== "POST") {
 
     return res.status(405).json({
-
-      ok:false,
-
-      error:
-        "POST required."
-
+      ok: false,
+      error: "POST required."
     });
 
   }
@@ -164,69 +115,29 @@ module.exports = async function handler(req, res) {
 
   try {
 
-    // Manually parse body if Vercel
-    // did not parse it automatically
-
-    let body =
-      req.body;
+    let body = req.body || {};
 
 
-    if (!body) {
-
-      let raw = "";
-
-
-      await new Promise((resolve) => {
-
-        req.on(
-          "data",
-          chunk => {
-            raw += chunk;
-          }
-        );
-
-
-        req.on(
-          "end",
-          resolve
-        );
-
-      });
-
+    if (typeof body === "string") {
 
       try {
-
-        body =
-          JSON.parse(raw);
-
+        body = JSON.parse(body);
       } catch {
-
         body = {};
-
       }
 
     }
 
 
-
-    const {
-      url
-    } = body || {};
-
+    const url = body.url;
 
 
     if (!url) {
 
       return res.status(400).json({
-
-        ok:false,
-
-        error:
-          "No URL received.",
-
-        bodyReceived:
-          body
-
+        ok: false,
+        error: "No URL received.",
+        bodyReceived: body
       });
 
     }
@@ -234,24 +145,17 @@ module.exports = async function handler(req, res) {
 
 
     const parsed =
-      new URL(
-        url
-      );
+      new URL(url);
+
 
 
     if (
-      !parsed.hostname.endsWith(
-        "e621.net"
-      )
+      !parsed.hostname.endsWith("e621.net")
     ) {
 
       return res.status(400).json({
-
-        ok:false,
-
-        error:
-          "Not an e621 URL."
-
+        ok: false,
+        error: "Not an e621 URL."
       });
 
     }
@@ -264,16 +168,11 @@ module.exports = async function handler(req, res) {
       );
 
 
-
     if (!match) {
 
       return res.status(400).json({
-
-        ok:false,
-
-        error:
-          "Could not find e621 post ID."
-
+        ok: false,
+        error: "Could not find e621 post ID."
       });
 
     }
@@ -290,16 +189,11 @@ module.exports = async function handler(req, res) {
       result.posts?.[0];
 
 
-
     if (!post) {
 
       return res.status(404).json({
-
-        ok:false,
-
-        error:
-          "No post found."
-
+        ok: false,
+        error: "No post found."
       });
 
     }
@@ -308,13 +202,11 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
 
-      ok:true,
+      ok: true,
 
-      site:
-        "e621",
+      site: "e621",
 
-      id:
-        post.id,
+      id: post.id,
 
       url:
         post.file?.url || null,
@@ -347,15 +239,11 @@ module.exports = async function handler(req, res) {
 
 
 
-  } catch(error) {
+  } catch (error) {
 
     return res.status(500).json({
-
-      ok:false,
-
-      error:
-        error.message
-
+      ok: false,
+      error: error.message
     });
 
   }
@@ -364,116 +252,131 @@ module.exports = async function handler(req, res) {
 
 
 
-// =====================================
-// e621 API request
-// =====================================
+
+// ===============================
+// e621 authenticated request
+// ===============================
 
 async function getE621Post(id) {
 
-
-  if (
-    !process.env.E621_USERNAME ||
-    !process.env.E621_API_KEY
-  ) {
-
-    throw new Error(
-      "Missing E621_USERNAME or E621_API_KEY."
-    );
-
-  }
-
-
-
-  const apiUrl =
+  const url =
     new URL(
       "https://e621.net/posts.json"
     );
 
 
-
-  apiUrl.searchParams.set(
+  url.searchParams.set(
     "login",
     process.env.E621_USERNAME
   );
 
 
-  apiUrl.searchParams.set(
+  url.searchParams.set(
     "api_key",
     process.env.E621_API_KEY
   );
 
 
-  apiUrl.searchParams.set(
+  url.searchParams.set(
     "tags",
     `id:${id}`
   );
 
 
-  apiUrl.searchParams.set(
+  url.searchParams.set(
     "limit",
     "1"
   );
 
 
-
-  const response =
-    await fetch(
-      apiUrl.toString(),
-      {
-
-        headers: {
-
-          "User-Agent":
-            `MultiSiteLinkResolver/1.0 (by ${process.env.E621_USERNAME})`,
-
-          "Accept":
-            "application/json"
-
-        }
-
-      }
-    );
-
-
-
-  const text =
-    await response.text();
-
-
-
-  if (!response.ok) {
-
-    throw new Error(
-      `e621 API returned HTTP ${response.status}: ${text.slice(0,1000)}`
-    );
-
-  }
-
-
-
-  return JSON.parse(text);
+  return await e621Fetch(
+    url.toString()
+  );
 
 }
 
 
 
-// =====================================
-// Flatten tag object
-// =====================================
+
+// ===============================
+// Fetch with timeout
+// ===============================
+
+async function e621Fetch(url) {
+
+  const controller =
+    new AbortController();
+
+
+  const timeout =
+    setTimeout(
+      () => controller.abort(),
+      10000
+    );
+
+
+  try {
+
+    const response =
+      await fetch(
+        url,
+        {
+          signal:
+            controller.signal,
+
+          headers: {
+
+            "User-Agent":
+              `MultiSiteLinkResolver/1.0 (by ${process.env.E621_USERNAME})`,
+
+            "Accept":
+              "application/json"
+
+          }
+        }
+      );
+
+
+    const text =
+      await response.text();
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        `e621 API returned HTTP ${response.status}: ${text.slice(0,500)}`
+      );
+
+    }
+
+
+    return JSON.parse(text);
+
+
+  } finally {
+
+    clearTimeout(timeout);
+
+  }
+
+}
+
+
+
+
+// ===============================
+// Flatten tags
+// ===============================
 
 function flattenTags(tags) {
 
   if (!tags) {
-
     return [];
-
   }
 
 
   if (Array.isArray(tags)) {
-
     return tags;
-
   }
 
 
