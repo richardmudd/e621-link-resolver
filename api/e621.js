@@ -1,9 +1,4 @@
-export default async function handler(req, res) {
-
-  // ==============================
-  // CORS
-  // ==============================
-
+function setCors(res) {
   res.setHeader(
     "Access-Control-Allow-Origin",
     "*"
@@ -16,20 +11,34 @@ export default async function handler(req, res) {
 
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type"
+    "Content-Type, Accept"
   );
 
+  res.setHeader(
+    "Access-Control-Max-Age",
+    "86400"
+  );
+}
 
+
+export default async function handler(req, res) {
+
+  setCors(res);
+
+
+  // Browser preflight
   if (req.method === "OPTIONS") {
-    return res.status(204).end();
+    return res.status(200).json({
+      ok: true
+    });
   }
 
 
-  // ==============================
-  // BASIC E621 CONNECTION TEST
+  // =====================================
+  // Basic connection test
   //
   // /api/e621?test=1
-  // ==============================
+  // =====================================
 
   if (
     req.method === "GET" &&
@@ -70,7 +79,51 @@ export default async function handler(req, res) {
           ),
 
         body:
-          text.slice(0,3000)
+          text.slice(0, 3000)
+
+      });
+
+
+    } catch (error) {
+
+      return res.status(500).json({
+
+        ok:false,
+
+        error:
+          error.message
+
+      });
+
+    }
+  }
+
+
+
+  // =====================================
+  // Browser lookup test
+  //
+  // /api/e621?id=6610187
+  // =====================================
+
+  if (
+    req.method === "GET" &&
+    req.query.id
+  ) {
+
+    try {
+
+      const result =
+        await getE621Post(
+          req.query.id
+        );
+
+
+      return res.status(200).json({
+
+        ok:true,
+
+        result
 
       });
 
@@ -91,17 +144,276 @@ export default async function handler(req, res) {
 
 
 
-  // ==============================
-  // AUTHENTICATED GET TEST
+  // =====================================
+  // Normal HTML lookup
   //
-  // /api/e621?id=POST_ID
-  // ==============================
+  // POST body:
+  // {
+  //   "url":"https://e621.net/posts/123"
+  // }
+  // =====================================
+
+  if (req.method !== "POST") {
+
+    return res.status(405).json({
+
+      ok:false,
+
+      error:
+        "POST required."
+
+    });
+
+  }
+
+
+  try {
+
+    const {
+      url
+    } = req.body || {};
+
+
+    if (
+      typeof url !== "string" ||
+      !url.trim()
+    ) {
+
+      return res.status(400).json({
+
+        ok:false,
+
+        error:
+          "URL is required."
+
+      });
+
+    }
+
+
+    const parsed =
+      new URL(
+        url.trim()
+      );
+
+
+    if (
+      !parsed.hostname.endsWith("e621.net")
+    ) {
+
+      return res.status(400).json({
+
+        ok:false,
+
+        error:
+          "Not an e621 URL."
+
+      });
+
+    }
+
+
+    const match =
+      parsed.pathname.match(
+        /\/posts\/(\d+)/i
+      );
+
+
+    if (!match) {
+
+      return res.status(400).json({
+
+        ok:false,
+
+        error:
+          "Could not find e621 post ID."
+
+      });
+
+    }
+
+
+    const result =
+      await getE621Post(
+        match[1]
+      );
+
+
+    const post =
+      result.posts?.[0];
+
+
+    if (!post) {
+
+      return res.status(404).json({
+
+        ok:false,
+
+        error:
+          "No post found."
+
+      });
+
+    }
+
+
+    return res.status(200).json({
+
+      ok:true,
+
+      site:
+        "e621",
+
+      id:
+        post.id,
+
+      url:
+        post.file?.url || null,
+
+      preview:
+        post.preview?.url ||
+        post.sample?.url ||
+        null,
+
+      post_url:
+        `https://e621.net/posts/${post.id}`,
+
+      rating:
+        post.rating || null,
+
+      tags:
+        flattenTags(post.tags),
+
+      description:
+        post.description || null,
+
+      raw:
+        post
+
+    });
+
+
+  } catch(error) {
+
+    return res.status(500).json({
+
+      ok:false,
+
+      error:
+        error.message
+
+    });
+
+  }
+
+}
+
+
+
+// =====================================
+// e621 API call
+// =====================================
+
+async function getE621Post(id) {
+
 
   if (
-    req.method === "GET" &&
-    req.query.id
+    !process.env.E621_USERNAME ||
+    !process.env.E621_API_KEY
   ) {
 
+    throw new Error(
+      "Missing E621 credentials."
+    );
+
+  }
+
+
+  const apiUrl =
+    new URL(
+      "https://e621.net/posts.json"
+    );
+
+
+  apiUrl.searchParams.set(
+    "login",
+    process.env.E621_USERNAME
+  );
+
+
+  apiUrl.searchParams.set(
+    "api_key",
+    process.env.E621_API_KEY
+  );
+
+
+  apiUrl.searchParams.set(
+    "tags",
+    `id:${id}`
+  );
+
+
+  apiUrl.searchParams.set(
+    "limit",
+    "1"
+  );
+
+
+  const response =
+    await fetch(
+      apiUrl.toString(),
+      {
+        headers: {
+
+          "User-Agent":
+            `MultiSiteLinkResolver/1.0 (by ${process.env.E621_USERNAME})`,
+
+          "Accept":
+            "application/json"
+
+        }
+      }
+    );
+
+
+  const text =
+    await response.text();
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      `e621 API returned HTTP ${response.status}: ${text.slice(0,1000)}`
+    );
+
+  }
+
+
+  return JSON.parse(text);
+
+}
+
+
+
+// =====================================
+// Tag flatten helper
+// =====================================
+
+function flattenTags(tags) {
+
+  if (!tags) {
+    return [];
+  }
+
+
+  if (Array.isArray(tags)) {
+    return tags;
+  }
+
+
+  return Object.values(tags).flat();
+
+}
     try {
 
       const id =
