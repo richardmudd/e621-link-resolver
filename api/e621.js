@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   res.setHeader(
     "Access-Control-Allow-Methods",
-    "POST, GET, OPTIONS"
+    "GET, POST, OPTIONS"
   );
 
   res.setHeader(
@@ -26,13 +26,9 @@ export default async function handler(req, res) {
 
 
   // ==============================
-  // TEMPORARY E621 CONNECTION TEST
+  // BASIC E621 CONNECTION TEST
   //
-  // Visit:
   // /api/e621?test=1
-  //
-  // This does NOT use your API key.
-  // It only checks if Vercel can reach e621.
   // ==============================
 
   if (
@@ -46,12 +42,9 @@ export default async function handler(req, res) {
         await fetch(
           "https://e621.net/posts.json?limit=1",
           {
-            method: "GET",
-
             headers: {
               "User-Agent":
                 `MultiSiteLinkResolver/1.0 (by ${process.env.E621_USERNAME || "unknown"})`,
-
               "Accept":
                 "application/json"
             }
@@ -77,22 +70,19 @@ export default async function handler(req, res) {
           ),
 
         body:
-          text.slice(0, 3000)
+          text.slice(0,3000)
 
       });
 
 
-    } catch (error) {
+    } catch(error) {
 
       return res.status(500).json({
 
-        ok:
-          false,
+        ok:false,
 
         error:
-          error instanceof Error
-            ? error.message
-            : String(error)
+          error.message
 
       });
 
@@ -100,16 +90,69 @@ export default async function handler(req, res) {
   }
 
 
+
   // ==============================
-  // NORMAL E621 LOOKUP
+  // AUTHENTICATED GET TEST
+  //
+  // /api/e621?id=POST_ID
   // ==============================
+
+  if (
+    req.method === "GET" &&
+    req.query.id
+  ) {
+
+    try {
+
+      const id =
+        req.query.id;
+
+
+      const data =
+        await getE621Post(id);
+
+
+      return res.status(200).json({
+
+        ok:true,
+
+        result:data
+
+      });
+
+
+    } catch(error) {
+
+      return res.status(500).json({
+
+        ok:false,
+
+        error:
+          error.message
+
+      });
+
+    }
+
+  }
+
+
+
+  // ==============================
+  // NORMAL POST LOOKUP
+  //
+  // Body:
+  // {
+  //   "url":"https://e621.net/posts/123"
+  // }
+  // ==============================
+
 
   if (req.method !== "POST") {
 
     return res.status(405).json({
 
-      ok:
-        false,
+      ok:false,
 
       error:
         "POST required."
@@ -133,8 +176,7 @@ export default async function handler(req, res) {
 
       return res.status(400).json({
 
-        ok:
-          false,
+        ok:false,
 
         error:
           "URL is required."
@@ -144,207 +186,69 @@ export default async function handler(req, res) {
     }
 
 
-    const pageUrl =
+    const parsed =
       new URL(
         url.trim()
       );
 
 
-    if (
-      pageUrl.hostname !== "e621.net" &&
-      !pageUrl.hostname.endsWith(".e621.net")
-    ) {
-
-      return res.status(400).json({
-
-        ok:
-          false,
-
-        error:
-          "URL is not an e621 URL."
-
-      });
-
-    }
-
-
     const match =
-      pageUrl.pathname.match(
+      parsed.pathname.match(
         /\/posts\/(\d+)/i
       );
 
 
     const id =
-      match?.[1] ||
-      pageUrl.searchParams.get("id");
+      match?.[1];
 
 
-    if (
-      !id ||
-      !/^\d+$/.test(id)
-    ) {
+    if (!id) {
 
       return res.status(400).json({
 
-        ok:
-          false,
+        ok:false,
 
         error:
-          "Could not find an e621 post ID."
+          "Could not find post ID."
 
       });
 
     }
 
 
-    if (
-      !process.env.E621_USERNAME ||
-      !process.env.E621_API_KEY
-    ) {
-
-      return res.status(500).json({
-
-        ok:
-          false,
-
-        error:
-          "E621 credentials are not configured."
-
-      });
-
-    }
-
-
-    const apiUrl =
-      new URL(
-        "https://e621.net/posts.json"
-      );
-
-
-    apiUrl.searchParams.set(
-      "login",
-      process.env.E621_USERNAME
-    );
-
-
-    apiUrl.searchParams.set(
-      "api_key",
-      process.env.E621_API_KEY
-    );
-
-
-    apiUrl.searchParams.set(
-      "tags",
-      `id:${id}`
-    );
-
-
-    apiUrl.searchParams.set(
-      "limit",
-      "1"
-    );
-
-
-    const response =
-      await fetch(
-        apiUrl.toString(),
-        {
-          method: "GET",
-
-          headers: {
-
-            "User-Agent":
-              `MultiSiteLinkResolver/1.0 (by ${process.env.E621_USERNAME})`,
-
-            "Accept":
-              "application/json"
-
-          }
-        }
-      );
-
-
-    const text =
-      await response.text();
-
-
-    if (!response.ok) {
-
-      return res.status(502).json({
-
-        ok:
-          false,
-
-        error:
-          `e621 API returned HTTP ${response.status}: ${text.slice(0,3000)}`
-
-      });
-
-    }
-
-
-    let data;
-
-
-    try {
-
-      data =
-        JSON.parse(text);
-
-    } catch {
-
-      return res.status(502).json({
-
-        ok:
-          false,
-
-        error:
-          "e621 returned invalid JSON.",
-
-        response:
-          text.slice(0,3000)
-
-      });
-
-    }
-
-
-    if (
-      !Array.isArray(data) ||
-      data.length === 0
-    ) {
-
-      return res.status(404).json({
-
-        ok:
-          false,
-
-        error:
-          `e621 returned no post for ID ${id}.`
-
-      });
-
-    }
+    const result =
+      await getE621Post(id);
 
 
     const post =
-      data[0];
+      result.posts?.[0];
+
+
+    if (!post) {
+
+      return res.status(404).json({
+
+        ok:false,
+
+        error:
+          "No e621 post found."
+
+      });
+
+    }
 
 
     return res.status(200).json({
 
-      ok:
-        true,
+      ok:true,
 
-      site:
-        "e621",
+      site:"e621",
 
       id:
         post.id,
 
       url:
-        post.file?.url ||
-        null,
+        post.file?.url || null,
 
       preview:
         post.preview?.url ||
@@ -355,8 +259,7 @@ export default async function handler(req, res) {
         `https://e621.net/posts/${post.id}`,
 
       rating:
-        post.rating ||
-        null,
+        post.rating,
 
       tags:
         flattenTags(post.tags),
@@ -367,17 +270,14 @@ export default async function handler(req, res) {
     });
 
 
-  } catch (error) {
+  } catch(error) {
 
     return res.status(500).json({
 
-      ok:
-        false,
+      ok:false,
 
       error:
-        error instanceof Error
-          ? error.message
-          : String(error)
+        error.message
 
     });
 
@@ -386,8 +286,94 @@ export default async function handler(req, res) {
 }
 
 
+
 // ==============================
-// HELPERS
+// E621 API REQUEST
+// ==============================
+
+async function getE621Post(id) {
+
+
+  if (
+    !process.env.E621_USERNAME ||
+    !process.env.E621_API_KEY
+  ) {
+
+    throw new Error(
+      "Missing E621_USERNAME or E621_API_KEY."
+    );
+
+  }
+
+
+  const apiUrl =
+    new URL(
+      "https://e621.net/posts.json"
+    );
+
+
+  apiUrl.searchParams.set(
+    "login",
+    process.env.E621_USERNAME
+  );
+
+
+  apiUrl.searchParams.set(
+    "api_key",
+    process.env.E621_API_KEY
+  );
+
+
+  apiUrl.searchParams.set(
+    "tags",
+    `id:${id}`
+  );
+
+
+  apiUrl.searchParams.set(
+    "limit",
+    "1"
+  );
+
+
+  const response =
+    await fetch(
+      apiUrl.toString(),
+      {
+        headers: {
+
+          "User-Agent":
+            `MultiSiteLinkResolver/1.0 (by ${process.env.E621_USERNAME})`,
+
+          "Accept":
+            "application/json"
+
+        }
+      }
+    );
+
+
+  const text =
+    await response.text();
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      `e621 API returned HTTP ${response.status}: ${text.slice(0,1000)}`
+    );
+
+  }
+
+
+  return JSON.parse(text);
+
+}
+
+
+
+// ==============================
+// TAG FORMATTER
 // ==============================
 
 function flattenTags(tags) {
@@ -402,24 +388,7 @@ function flattenTags(tags) {
   }
 
 
-  const result = [];
-
-
-  for (
-    const value of Object.values(tags)
-  ) {
-
-    if (Array.isArray(value)) {
-
-      result.push(
-        ...value
-      );
-
-    }
-
-  }
-
-
-  return result;
+  return Object.values(tags)
+    .flat();
 
 }
